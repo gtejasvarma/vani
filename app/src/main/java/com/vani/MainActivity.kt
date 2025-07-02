@@ -4,7 +4,6 @@ import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
@@ -14,30 +13,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.vani.data.TranscriptionRepository
 import com.vani.ui.ConversationScreen
-import com.vani.ui.SetupScreen
-import com.vani.util.PermissionUtils
+import com.vani.ui.OnboardingScreen
 import com.vani.viewmodel.MainViewModel
-import com.vani.viewmodel.SetupViewModel
+import com.vani.viewmodel.OnboardingViewModel
 
 class MainActivity : ComponentActivity() {
     
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val allGranted = permissions.all { it.value }
-        if (!allGranted) {
-            // Handle permission denial - could show a dialog or disable functionality
-            finish()
-        }
-    }
-    
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        // Request permissions on startup
-        if (!PermissionUtils.hasRecordAudioPermission(this)) {
-            permissionLauncher.launch(PermissionUtils.getRequiredPermissions())
-        }
         
         setContent {
             MaterialTheme {
@@ -56,26 +39,26 @@ fun VaniApp() {
     
     // Create dependencies
     val repository = remember { TranscriptionRepository() }
-    val setupViewModel = remember { SetupViewModel(context) }
+    val onboardingViewModel = remember { OnboardingViewModel(context) }
     val mainViewModel = remember { MainViewModel(repository, context) }
     
     // Check if setup is completed
-    val startDestination = if (setupViewModel.isSetupCompleted()) {
+    val startDestination = if (onboardingViewModel.isSetupCompleted()) {
         "conversation"
     } else {
-        "setup"
+        "onboarding"
     }
     
     NavHost(
         navController = navController,
         startDestination = startDestination
     ) {
-        composable("setup") {
-            SetupScreen(
-                viewModel = setupViewModel,
-                onSetupComplete = {
+        composable("onboarding") {
+            OnboardingScreen(
+                viewModel = onboardingViewModel,
+                onOnboardingComplete = {
                     navController.navigate("conversation") {
-                        popUpTo("setup") { inclusive = true }
+                        popUpTo("onboarding") { inclusive = true }
                     }
                 }
             )
