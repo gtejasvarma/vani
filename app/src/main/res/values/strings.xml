@@ -1,3 +1,27 @@
 <resources>
     <string name="app_name">Vani</string>
+    
+    <!-- Setup Screen -->
+    <string name="setup_title">Vani Setup</string>
+    <string name="setup_subtitle">Configure your voice assistant</string>
+    <string name="api_key_label">Gemini API Key</string>
+    <string name="language_label">Transcription Language</string>
+    <string name="language_telugu">Telugu</string>
+    <string name="language_english">English</string>
+    <string name="save_continue">Save &amp; Continue</string>
+    <string name="api_key_required">API Key is required</string>
+    
+    <!-- Conversation Screen -->
+    <string name="connected">Connected</string>
+    <string name="no_internet">No Internet</string>
+    <string name="clear_conversation">Clear</string>
+    <string name="clear_dialog_title">Clear Conversation</string>
+    <string name="clear_dialog_message">Are you sure you want to clear this conversation?</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+    
+    <!-- Microphone Button -->
+    <string name="start_listening">Start listening</string>
+    <string name="stop_listening">Stop listening</string>
+    <string name="speaking">Speaking</string>
 </resources>

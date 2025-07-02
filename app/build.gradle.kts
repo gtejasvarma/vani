@@ -6,15 +6,15 @@ plugins {
 }
 
 android {
-    namespace = "com.vani.android"
-    compileSdk = 34
+    namespace = "com.vani"
+    compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.vani.android"
-        minSdk = 33
-        targetSdk = 33
+        applicationId = "com.vani"
+        minSdk = 35
+        targetSdk = 35
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -24,7 +24,7 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
+        kotlinCompilerExtensionVersion = "1.5.4"
     }
 
     buildTypes {
@@ -47,17 +47,28 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.activity.compose) // For setContent and ComponentActivity
-    implementation(platform(libs.androidx.compose.bom)) // Compose Bill of Materials
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.appcompat)
+    implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.glance)
-    implementation(libs.androidx.glance.appwidget) // For Material 3 components
-
-    // Other dependencies...
+    implementation(libs.androidx.lifecycle.process)
+    
+    // ViewModel & Lifecycle
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
+    implementation("androidx.navigation:navigation-compose:2.7.7")
+    
+    // Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    
+    // Gemini SDK
+    implementation("com.google.ai.client.generativeai:generativeai:0.3.0")
+    
+    // Testing
     testImplementation(libs.junit)
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
