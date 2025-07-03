@@ -12,7 +12,10 @@ class SimpleSpeechRecognizer(
     private val onPartialResult: (String) -> Unit,
     private val onFinalResult: (String) -> Unit,
     private val onError: (String) -> Unit,
-    private val onReady: () -> Unit
+    private val onReady: () -> Unit,
+    private val onVolumeChanged: (Float) -> Unit = {},
+    private val onSpeechStart: () -> Unit = {},
+    private val onSpeechEnd: () -> Unit = {}
 ) {
     
     private var speechRecognizer: SpeechRecognizer? = null
@@ -38,10 +41,14 @@ class SimpleSpeechRecognizer(
             
             override fun onBeginningOfSpeech() {
                 onPartialResult("🗣️ Speech detected!")
+                onSpeechStart()
             }
             
             override fun onRmsChanged(rmsdB: Float) {
-                // We can use this to show a visual indicator of voice activity
+                // Convert RMS dB to a normalized 0-1 range for UI display
+                // RMS values typically range from 0 to ~10dB, normalize to 0-1
+                val normalizedVolume = (rmsdB / 10f).coerceIn(0f, 1f)
+                onVolumeChanged(normalizedVolume)
             }
             
             override fun onBufferReceived(buffer: ByteArray?) {
@@ -50,6 +57,7 @@ class SimpleSpeechRecognizer(
             
             override fun onEndOfSpeech() {
                 onPartialResult("🔚 Speech ended, processing...")
+                onSpeechEnd()
             }
             
             override fun onError(error: Int) {
