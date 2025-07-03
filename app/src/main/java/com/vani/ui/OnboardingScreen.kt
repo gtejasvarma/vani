@@ -25,19 +25,6 @@ fun OnboardingScreen(
             )
         }
         
-        OnboardingStep.API_KEY_SETUP -> {
-            ApiKeySetupScreen(
-                apiKey = uiState.apiKey,
-                onApiKeyChange = viewModel::updateApiKey,
-                onNextClick = viewModel::nextStep,
-                onBackClick = viewModel::previousStep,
-                canProceed = uiState.canGoNext,
-                errorMessage = uiState.errorMessage,
-                progress = uiState.setupProgress,
-                modifier = modifier
-            )
-        }
-        
         OnboardingStep.LANGUAGE_SELECTION -> {
             LanguageSelectionScreen(
                 selectedLanguage = uiState.selectedLanguage,
