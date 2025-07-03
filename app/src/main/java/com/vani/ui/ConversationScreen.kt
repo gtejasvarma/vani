@@ -15,7 +15,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.vani.data.model.TranscriptLine
 import com.vani.viewmodel.MainViewModel
 import com.vani.viewmodel.MicButtonState
+import com.vani.ui.theme.AccessibilityColors
 
 @Composable
 fun ConversationScreen(
@@ -50,18 +55,10 @@ fun ConversationScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
     ) {
-        // Top Bar
-        com.vani.ui.components.TopAppBar(
-            isConnected = uiState.isConnected,
-            isListening = uiState.isListening,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 60.dp)
-        )
         
         // Conversation Area
         if (uiState.transcriptLines.isEmpty()) {
-            // Empty state
+            // Empty state - Accessibility focused
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -70,32 +67,41 @@ fun ConversationScreen(
                 verticalArrangement = Arrangement.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Phone,
+                    imageVector = Icons.Default.RecordVoiceOver,
                     contentDescription = "Start conversation",
-                    modifier = Modifier.size(80.dp),
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                    modifier = Modifier.size(96.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
                 )
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(32.dp))
                 Text(
-                    text = "Tap the microphone to start listening",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    text = "Ready to Listen",
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
                     textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 32.sp
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Tap the microphone to start capturing conversation",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 20.sp
                 )
             }
         } else {
-            // Conversation list
+            // Conversation list - maximum space for text (no top bar)
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 32.dp)
-                    .padding(top = 140.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
+                    .padding(top = 60.dp), // Less top padding without status bar
+                verticalArrangement = Arrangement.spacedBy(16.dp),
                 contentPadding = PaddingValues(
-                    top = 24.dp,
-                    bottom = 240.dp // Extra space to prevent overlap with mic button and volume indicator
+                    top = 16.dp,
+                    bottom = 180.dp // Space for mic button only
                 )
             ) {
                 items(uiState.transcriptLines) { line ->
@@ -104,18 +110,16 @@ fun ConversationScreen(
             }
         }
         
-        // Large Microphone Button with Volume Indicator
-        Column(
+        // Microphone button with integrated connection status
+        MicrophoneButton(
+            state = uiState.micButtonState,
+            isConnected = uiState.isConnected,
+            isListening = uiState.isListening,
+            onTap = viewModel::onMicButtonTap,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 80.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            MicrophoneButton(
-                state = uiState.micButtonState,
-                onTap = viewModel::onMicButtonTap
-            )
-        }
+                .padding(bottom = 80.dp)
+        )
         
         // Clear Button
         if (uiState.transcriptLines.isNotEmpty()) {
@@ -136,33 +140,48 @@ private fun ConversationCard(
     line: TranscriptLine,
     modifier: Modifier = Modifier
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Text(
-            text = line.text,
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(24.dp),
-            fontWeight = FontWeight.Medium,
-            lineHeight = 32.sp
-        )
-    }
+    // Radical simplicity - just the words with subtle speaker hint
+    val speakerIndex = line.text.hashCode() % 3
+    val speakerColor = AccessibilityColors.getSpeakerColor(speakerIndex)
+    
+    // Pure simplicity - just colored text for speaker identification
+    Text(
+        text = line.text,
+        style = MaterialTheme.typography.headlineSmall,
+        color = speakerColor, // Text color directly indicates speaker
+        fontWeight = FontWeight.Normal,
+        lineHeight = 40.sp,
+        fontSize = 28.sp,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 12.dp)
+    )
 }
 
 @Composable
 private fun MicrophoneButton(
     state: MicButtonState,
+    isConnected: Boolean,
+    isListening: Boolean,
     onTap: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isListening = state == MicButtonState.LISTENING
+    val isListeningState = state == MicButtonState.LISTENING
     
-    // Pulsing animation for listening state
+    // Connection-based colors and states
+    val buttonColor = when {
+        isListening -> AccessibilityColors.AudioActive // Green when actively listening
+        isConnected -> AccessibilityColors.Speaker1Primary // Blue when connected and ready
+        else -> AccessibilityColors.ErrorRed // Red when disconnected
+    }
+    
+    val borderColor = when {
+        isListening -> Color.Transparent // No border when listening (clean focus)
+        isConnected -> AccessibilityColors.SuccessGreen // Green border when connected
+        else -> AccessibilityColors.ErrorRed // Red border when disconnected
+    }
+    
+    // Pulsing animation only for listening state
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1f,
@@ -174,22 +193,52 @@ private fun MicrophoneButton(
         label = "pulse_scale"
     )
     
-    FloatingActionButton(
-        onClick = onTap,
-        modifier = modifier
-            .size(80.dp)
-            .scale(pulseScale),
-        containerColor = if (isListening) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
-        contentColor = MaterialTheme.colorScheme.onPrimary,
-        elevation = FloatingActionButtonDefaults.elevation(
-            defaultElevation = if (isListening) 8.dp else 6.dp
-        )
+    Box(
+        modifier = modifier.size(88.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Icon(
-            imageVector = Icons.Default.Phone,
-            contentDescription = if (isListening) "Stop listening" else "Start listening",
-            modifier = Modifier.size(36.dp)
-        )
+        // Connection status border (hidden during listening)
+        if (!isListening) {
+            Box(
+                modifier = Modifier
+                    .size(96.dp)
+                    .background(
+                        color = Color.Transparent,
+                        shape = CircleShape
+                    )
+                    .clip(CircleShape)
+                    .background(
+                        brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                            colors = listOf(
+                                borderColor.copy(alpha = 0.3f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+        }
+        
+        FloatingActionButton(
+            onClick = if (isConnected) onTap else { {} }, // Disabled when disconnected
+            modifier = Modifier
+                .size(88.dp)
+                .scale(pulseScale),
+            containerColor = buttonColor,
+            contentColor = Color.White,
+            elevation = FloatingActionButtonDefaults.elevation(
+                defaultElevation = if (isListening) 12.dp else 8.dp
+            )
+        ) {
+            Icon(
+                imageVector = if (isListening) Icons.Default.MicOff else Icons.Default.Mic,
+                contentDescription = when {
+                    isListening -> "Stop listening"
+                    isConnected -> "Start listening"
+                    else -> "No connection"
+                },
+                modifier = Modifier.size(40.dp)
+            )
+        }
     }
 }
 
