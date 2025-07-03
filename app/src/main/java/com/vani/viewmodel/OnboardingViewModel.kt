@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vani.util.PermissionUtils
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -144,46 +143,6 @@ class OnboardingViewModel(private val context: Context) : ViewModel() {
             canGoNext = false,
             errorMessage = "Microphone permission is required for voice transcription"
         )
-    }
-
-    fun completeSetup() {
-        val currentState = _uiState.value
-        val timeoutValue = currentState.silenceTimeout.toIntOrNull() ?: 60
-
-        if (!isValidApiKey(currentState.apiKey)) {
-            _uiState.value = currentState.copy(errorMessage = "Valid API Key is required")
-            return
-        }
-
-        if (!currentState.hasPermission) {
-            _uiState.value = currentState.copy(errorMessage = "Microphone permission is required")
-            return
-        }
-
-        _uiState.value = currentState.copy(isLoading = true, errorMessage = null)
-
-        viewModelScope.launch {
-            try {
-                prefs.edit()
-                    .putString("gemini_api_key", currentState.apiKey)
-                    .putString("transcription_language", currentState.selectedLanguage)
-                    .putInt("silence_timeout_seconds", timeoutValue)
-                    .putBoolean("setup_completed", true)
-                    .apply()
-                
-                _uiState.value = _uiState.value.copy(isLoading = false)
-                
-                // Auto-transition after 3 seconds
-                // Setup is complete - onboarding is done
-                delay(3000)
-                
-            } catch (e: Exception) {
-                _uiState.value = currentState.copy(
-                    isLoading = false,
-                    errorMessage = "Failed to save settings: ${e.message}"
-                )
-            }
-        }
     }
 
     fun completeSetupAndFinish() {
