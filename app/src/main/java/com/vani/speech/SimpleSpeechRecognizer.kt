@@ -88,7 +88,10 @@ class SimpleSpeechRecognizer(
             }
             
             override fun onPartialResults(partialResults: Bundle?) {
-                // Ignore partial results for simplicity
+                val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                if (!matches.isNullOrEmpty() && matches.first().isNotBlank()) {
+                    onPartialResult("🗣️ ${matches.first()}")
+                }
             }
             
             override fun onEvent(eventType: Int, params: Bundle?) {
@@ -99,9 +102,11 @@ class SimpleSpeechRecognizer(
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3) // Get more alternatives for better accuracy
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, silenceMillis)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, silenceMillis)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000) // 2 seconds for natural pauses
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true) // Enable partial results
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false) // Use online for better accuracy
         }
         
         speechRecognizer?.startListening(intent)

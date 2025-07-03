@@ -115,9 +115,6 @@ fun ConversationScreen(
                 state = uiState.micButtonState,
                 onTap = viewModel::onMicButtonTap
             )
-            
-            // Volume indicator temporarily disabled to test stable experience
-            // TODO: Re-implement volume indicator without layout shifts
         }
         
         // Clear Button

@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vani.util.PermissionUtils
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,7 +11,6 @@ import kotlinx.coroutines.launch
 
 enum class OnboardingStep {
     WELCOME,
-    API_KEY_SETUP,
     LANGUAGE_SELECTION,
     PERMISSIONS,
     SETUP_COMPLETE
@@ -20,7 +18,6 @@ enum class OnboardingStep {
 
 data class OnboardingUiState(
     val currentStep: OnboardingStep = OnboardingStep.WELCOME,
-    val apiKey: String = "",
     val selectedLanguage: String = "te-IN", // Telugu pre-selected
     val silenceTimeout: String = "60",
     val isLoading: Boolean = false,
@@ -39,13 +36,11 @@ class OnboardingViewModel(private val context: Context) : ViewModel() {
 
     init {
         // Load existing settings if available
-        val loadedApiKey = prefs.getString("gemini_api_key", "") ?: ""
         val loadedLanguage = prefs.getString("transcription_language", "te-IN") ?: "te-IN"
         val loadedSilenceTimeout = prefs.getInt("silence_timeout_seconds", 60).toString()
         val hasPermission = PermissionUtils.hasRecordAudioPermission(context)
         
         _uiState.value = OnboardingUiState(
-            apiKey = loadedApiKey,
             selectedLanguage = loadedLanguage,
             silenceTimeout = loadedSilenceTimeout,
             hasPermission = hasPermission,
@@ -57,17 +52,15 @@ class OnboardingViewModel(private val context: Context) : ViewModel() {
     fun nextStep() {
         val currentState = _uiState.value
         val nextStep = when (currentState.currentStep) {
-            OnboardingStep.WELCOME -> OnboardingStep.API_KEY_SETUP
-            OnboardingStep.API_KEY_SETUP -> OnboardingStep.LANGUAGE_SELECTION
+            OnboardingStep.WELCOME -> OnboardingStep.LANGUAGE_SELECTION
             OnboardingStep.LANGUAGE_SELECTION -> OnboardingStep.PERMISSIONS
             OnboardingStep.PERMISSIONS -> OnboardingStep.SETUP_COMPLETE
             OnboardingStep.SETUP_COMPLETE -> return // Final step
         }
         
         val progress = when (nextStep) {
-            OnboardingStep.WELCOME -> 0.25f
-            OnboardingStep.API_KEY_SETUP -> 0.5f
-            OnboardingStep.LANGUAGE_SELECTION -> 0.75f
+            OnboardingStep.WELCOME -> 0.33f
+            OnboardingStep.LANGUAGE_SELECTION -> 0.66f
             OnboardingStep.PERMISSIONS -> 1.0f
             OnboardingStep.SETUP_COMPLETE -> 1.0f
         }
@@ -84,16 +77,14 @@ class OnboardingViewModel(private val context: Context) : ViewModel() {
         val currentState = _uiState.value
         val previousStep = when (currentState.currentStep) {
             OnboardingStep.WELCOME -> return // First step
-            OnboardingStep.API_KEY_SETUP -> OnboardingStep.WELCOME
-            OnboardingStep.LANGUAGE_SELECTION -> OnboardingStep.API_KEY_SETUP
+            OnboardingStep.LANGUAGE_SELECTION -> OnboardingStep.WELCOME
             OnboardingStep.PERMISSIONS -> OnboardingStep.LANGUAGE_SELECTION
             OnboardingStep.SETUP_COMPLETE -> OnboardingStep.PERMISSIONS
         }
         
         val progress = when (previousStep) {
-            OnboardingStep.WELCOME -> 0.25f
-            OnboardingStep.API_KEY_SETUP -> 0.5f
-            OnboardingStep.LANGUAGE_SELECTION -> 0.75f
+            OnboardingStep.WELCOME -> 0.33f
+            OnboardingStep.LANGUAGE_SELECTION -> 0.66f
             OnboardingStep.PERMISSIONS -> 1.0f
             OnboardingStep.SETUP_COMPLETE -> 1.0f
         }
@@ -106,13 +97,6 @@ class OnboardingViewModel(private val context: Context) : ViewModel() {
         )
     }
 
-    fun updateApiKey(apiKey: String) {
-        _uiState.value = _uiState.value.copy(
-            apiKey = apiKey, 
-            errorMessage = null,
-            canGoNext = isValidApiKey(apiKey)
-        )
-    }
 
     fun updateLanguage(language: String) {
         _uiState.value = _uiState.value.copy(
@@ -146,54 +130,9 @@ class OnboardingViewModel(private val context: Context) : ViewModel() {
         )
     }
 
-    fun completeSetup() {
-        val currentState = _uiState.value
-        val timeoutValue = currentState.silenceTimeout.toIntOrNull() ?: 60
-
-        if (!isValidApiKey(currentState.apiKey)) {
-            _uiState.value = currentState.copy(errorMessage = "Valid API Key is required")
-            return
-        }
-
-        if (!currentState.hasPermission) {
-            _uiState.value = currentState.copy(errorMessage = "Microphone permission is required")
-            return
-        }
-
-        _uiState.value = currentState.copy(isLoading = true, errorMessage = null)
-
-        viewModelScope.launch {
-            try {
-                prefs.edit()
-                    .putString("gemini_api_key", currentState.apiKey)
-                    .putString("transcription_language", currentState.selectedLanguage)
-                    .putInt("silence_timeout_seconds", timeoutValue)
-                    .putBoolean("setup_completed", true)
-                    .apply()
-                
-                _uiState.value = _uiState.value.copy(isLoading = false)
-                
-                // Auto-transition after 3 seconds
-                // Setup is complete - onboarding is done
-                delay(3000)
-                
-            } catch (e: Exception) {
-                _uiState.value = currentState.copy(
-                    isLoading = false,
-                    errorMessage = "Failed to save settings: ${e.message}"
-                )
-            }
-        }
-    }
-
     fun completeSetupAndFinish() {
         val currentState = _uiState.value
         val timeoutValue = currentState.silenceTimeout.toIntOrNull() ?: 60
-
-        if (!isValidApiKey(currentState.apiKey)) {
-            _uiState.value = currentState.copy(errorMessage = "Valid API Key is required")
-            return
-        }
 
         if (!currentState.hasPermission) {
             _uiState.value = currentState.copy(errorMessage = "Microphone permission is required")
@@ -203,7 +142,6 @@ class OnboardingViewModel(private val context: Context) : ViewModel() {
         // Save settings immediately without loading state or delay
         try {
             prefs.edit()
-                .putString("gemini_api_key", currentState.apiKey)
                 .putString("transcription_language", currentState.selectedLanguage)
                 .putInt("silence_timeout_seconds", timeoutValue)
                 .putBoolean("setup_completed", true)
@@ -224,17 +162,10 @@ class OnboardingViewModel(private val context: Context) : ViewModel() {
         val currentState = _uiState.value
         return when (step) {
             OnboardingStep.WELCOME -> true
-            OnboardingStep.API_KEY_SETUP -> isValidApiKey(currentState.apiKey)
             OnboardingStep.LANGUAGE_SELECTION -> true
             OnboardingStep.PERMISSIONS -> currentState.hasPermission
             OnboardingStep.SETUP_COMPLETE -> true
         }
     }
 
-    private fun isValidApiKey(apiKey: String): Boolean {
-        // Basic validation - check if it looks like a valid API key format
-        return apiKey.isNotBlank() && 
-               apiKey.length >= 20 && 
-               apiKey.matches(Regex("^[A-Za-z0-9_-]+$"))
-    }
 }

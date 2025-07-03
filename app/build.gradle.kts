@@ -63,8 +63,6 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     
-    // Gemini SDK
-    implementation("com.google.ai.client.generativeai:generativeai:0.3.0")
     
     // Testing
     testImplementation(libs.junit)

@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vani.data.TranscriptionRepository
 import com.vani.data.model.TranscriptLine
-import com.vani.speech.SimpleSpeechRecognizer
+import com.vani.service.SpeechRecognitionService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import com.vani.util.ConnectivityMonitor
@@ -14,7 +14,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.Job
+import android.content.ComponentName
+import android.content.ServiceConnection
+import android.content.Intent
+import android.os.IBinder
 
 enum class MicButtonState {
     IDLE,
@@ -40,11 +43,9 @@ class MainViewModel(
     
     private val connectivityMonitor = ConnectivityMonitor(context)
     
-    private var speechRecognizer: SimpleSpeechRecognizer? = null
+    private var speechService: SpeechRecognitionService? = null
     private val prefs = context.getSharedPreferences("vani_prefs", Context.MODE_PRIVATE)
-    
-    private var conversationTimerJob: Job? = null
-    private val conversationTimeoutMs = 5 * 60 * 1000L // 5 minutes
+    private var serviceBound = false
     
     val uiState: StateFlow<MainUiState> = combine(
         repository.transcriptLines,
@@ -67,101 +68,100 @@ class MainViewModel(
     )
     
     init {
-        setupSpeechRecognizer()
+        // Delay service binding to avoid issues during ViewModel creation
+        viewModelScope.launch {
+            delay(100) // Small delay to ensure context is ready
+            bindToSpeechService()
+        }
     }
 
-    private fun setupSpeechRecognizer() {
-        speechRecognizer = SimpleSpeechRecognizer(
-            context = context,
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            val binder = service as SpeechRecognitionService.SpeechRecognitionBinder
+            speechService = binder.getService()
+            serviceBound = true
+            setupServiceCallbacks()
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            speechService = null
+            serviceBound = false
+        }
+    }
+    
+    private fun bindToSpeechService() {
+        try {
+            val intent = Intent(context, SpeechRecognitionService::class.java)
+            // Start the service first to ensure it exists
+            val startResult = context.startService(intent)
+            if (startResult != null) {
+                // Only bind if service started successfully
+                val bound = context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+                if (!bound) {
+                    serviceBound = false
+                }
+            } else {
+                serviceBound = false
+            }
+        } catch (e: Exception) {
+            // Handle any binding exceptions gracefully  
+            serviceBound = false
+        }
+    }
+    
+    private fun setupServiceCallbacks() {
+        speechService?.apply {
             onPartialResult = { text ->
-                // Partial results can be used to update the UI in real-time if needed
-            },
+                // Handle partial results for real-time UI updates
+                viewModelScope.launch {
+                    // Could add partial result handling here if needed
+                }
+            }
+            
             onFinalResult = { text ->
                 viewModelScope.launch {
                     if (text.isNotBlank() && !text.contains("No speech detected")) {
                         repository.addTranscriptLine(TranscriptLine(text = text))
                     }
-                    // In conversation mode, automatically restart listening
-                    if (_micButtonState.value == MicButtonState.LISTENING) {
-                        startConversationTimer() // Start 5-minute timer after speech
-                        startListening() // Immediately restart recognizer
-                    } else {
-                        _isListening.value = false
-                        _volumeLevel.value = 0f
-                    }
                 }
-            },
+            }
+            
             onError = { error ->
                 viewModelScope.launch {
-                    // Handle different error types
-                    when {
-                        error.contains("No speech input") || error.contains("Speech timeout") -> {
-                            // Timeout errors - restart if still in conversation mode
-                            if (_micButtonState.value == MicButtonState.LISTENING) {
-                                startConversationTimer()
-                                startListening()
-                            } else {
-                                stopConversationMode()
-                            }
-                        }
-                        else -> {
-                            // Real errors - show to user and stop
-                            repository.addTranscriptLine(TranscriptLine(text = "❌ Error: $error"))
-                            stopConversationMode()
-                        }
-                    }
+                    repository.addTranscriptLine(TranscriptLine(text = "❌ Error: $error"))
+                    _micButtonState.value = MicButtonState.IDLE
                 }
-            },
-            onReady = {
-                _isListening.value = true
-            },
-            onVolumeChanged = { rmsDb ->
-                _volumeLevel.value = rmsDb
-            },
-            onSpeechStart = {
-                // Reset timer when new speech begins
-                resetConversationTimer()
-            },
-            onSpeechEnd = {
-                // Start timer when speech ends
-                startConversationTimer()
             }
-        )
-    }
-    
-    private fun startConversationTimer() {
-        // Cancel existing timer
-        conversationTimerJob?.cancel()
-        
-        // Start new 5-minute timer
-        conversationTimerJob = viewModelScope.launch {
-            delay(conversationTimeoutMs)
-            // Timer completed - stop conversation mode
-            if (_micButtonState.value == MicButtonState.LISTENING) {
-                stopConversationMode()
+            
+            onListeningStateChanged = { listening ->
+                _isListening.value = listening
+            }
+            
+            onVolumeChanged = { volume ->
+                _volumeLevel.value = volume
             }
         }
     }
     
-    private fun resetConversationTimer() {
-        // Cancel current timer and start fresh
-        conversationTimerJob?.cancel()
-        // Don't restart timer immediately - let speech end trigger it
-    }
-    
     private fun stopConversationMode() {
-        conversationTimerJob?.cancel()
         _micButtonState.value = MicButtonState.IDLE
         _isListening.value = false
         _volumeLevel.value = 0f
-        speechRecognizer?.stopListening()
+        speechService?.stopConversationMode()
     }
     
     fun onMicButtonTap() {
+        if (!serviceBound || speechService == null) {
+            // Service not ready, try to bind again
+            bindToSpeechService()
+            return
+        }
+        
         when (_micButtonState.value) {
             MicButtonState.IDLE -> {
                 _micButtonState.value = MicButtonState.LISTENING
-                startListening()
+                val language = prefs.getString("transcription_language", "en-US") ?: "en-US"
+                speechService?.startConversationMode(language)
             }
             MicButtonState.LISTENING -> {
                 stopConversationMode()
@@ -169,19 +169,6 @@ class MainViewModel(
         }
     }
     
-    private fun startListening() {
-        val language = prefs.getString("transcription_language", "en-US") ?: "en-US"
-        // Use shorter timeout for individual speech segments (30 seconds)
-        // The conversation timer handles the overall 5-minute timeout
-        val segmentTimeout = 30 * 1000L 
-        speechRecognizer?.startListening(language, segmentTimeout)
-    }
-    
-    private fun stopListening() {
-        conversationTimerJob?.cancel()
-        _isListening.value = false
-        speechRecognizer?.stopListening()
-    }
     
     fun clearConversation() {
         viewModelScope.launch {
@@ -192,9 +179,23 @@ class MainViewModel(
         }
     }
     
+    private fun ensureServiceBound() {
+        if (!serviceBound || speechService == null) {
+            bindToSpeechService()
+        }
+    }
+    
     override fun onCleared() {
         super.onCleared()
-        conversationTimerJob?.cancel()
-        speechRecognizer?.stopListening()
+        speechService?.stopConversationMode()
+        if (serviceBound) {
+            try {
+                context.unbindService(serviceConnection)
+            } catch (e: Exception) {
+                // Service may already be unbound
+            }
+            serviceBound = false
+        }
+        speechService = null
     }
 }
