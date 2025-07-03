@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 
 enum class MicButtonState {
     IDLE,
@@ -23,7 +25,8 @@ data class MainUiState(
     val transcriptLines: List<TranscriptLine> = emptyList(),
     val micButtonState: MicButtonState = MicButtonState.IDLE,
     val isListening: Boolean = false,
-    val isConnected: Boolean = true
+    val isConnected: Boolean = true,
+    val volumeLevel: Float = 0f // RMS dB level for volume indicator
 )
 
 class MainViewModel(
@@ -33,23 +36,29 @@ class MainViewModel(
     
     private val _micButtonState = MutableStateFlow(MicButtonState.IDLE)
     private val _isListening = MutableStateFlow(false)
+    private val _volumeLevel = MutableStateFlow(0f)
     
     private val connectivityMonitor = ConnectivityMonitor(context)
     
     private var speechRecognizer: SimpleSpeechRecognizer? = null
     private val prefs = context.getSharedPreferences("vani_prefs", Context.MODE_PRIVATE)
     
+    private var conversationTimerJob: Job? = null
+    private val conversationTimeoutMs = 5 * 60 * 1000L // 5 minutes
+    
     val uiState: StateFlow<MainUiState> = combine(
         repository.transcriptLines,
         _micButtonState,
         _isListening,
-        connectivityMonitor.isConnected
-    ) { transcriptLines, micState, isListening, connected ->
+        connectivityMonitor.isConnected,
+        _volumeLevel
+    ) { transcriptLines, micState, isListening, connected, volumeLevel ->
         MainUiState(
             transcriptLines = transcriptLines,
             micButtonState = micState,
             isListening = isListening,
-            isConnected = connected
+            isConnected = connected,
+            volumeLevel = volumeLevel
         )
     }.stateIn(
         scope = viewModelScope,
@@ -72,30 +81,80 @@ class MainViewModel(
                     if (text.isNotBlank() && !text.contains("No speech detected")) {
                         repository.addTranscriptLine(TranscriptLine(text = text))
                     }
-                    // If the mic is still supposed to be listening, restart it
+                    // In conversation mode, automatically restart listening
                     if (_micButtonState.value == MicButtonState.LISTENING) {
-                        startListening()
+                        startConversationTimer() // Start 5-minute timer after speech
+                        startListening() // Immediately restart recognizer
                     } else {
                         _isListening.value = false
+                        _volumeLevel.value = 0f
                     }
                 }
             },
             onError = { error ->
                 viewModelScope.launch {
-                    // Silently stop listening on timeout, otherwise show the error
-                    if (error.contains("No speech input")) {
-                        _micButtonState.value = MicButtonState.IDLE
-                    } else {
-                        repository.addTranscriptLine(TranscriptLine(text = "❌ Error: $error"))
-                        _micButtonState.value = MicButtonState.IDLE
+                    // Handle different error types
+                    when {
+                        error.contains("No speech input") || error.contains("Speech timeout") -> {
+                            // Timeout errors - restart if still in conversation mode
+                            if (_micButtonState.value == MicButtonState.LISTENING) {
+                                startConversationTimer()
+                                startListening()
+                            } else {
+                                stopConversationMode()
+                            }
+                        }
+                        else -> {
+                            // Real errors - show to user and stop
+                            repository.addTranscriptLine(TranscriptLine(text = "❌ Error: $error"))
+                            stopConversationMode()
+                        }
                     }
-                    _isListening.value = false
                 }
             },
             onReady = {
                 _isListening.value = true
+            },
+            onVolumeChanged = { rmsDb ->
+                _volumeLevel.value = rmsDb
+            },
+            onSpeechStart = {
+                // Reset timer when new speech begins
+                resetConversationTimer()
+            },
+            onSpeechEnd = {
+                // Start timer when speech ends
+                startConversationTimer()
             }
         )
+    }
+    
+    private fun startConversationTimer() {
+        // Cancel existing timer
+        conversationTimerJob?.cancel()
+        
+        // Start new 5-minute timer
+        conversationTimerJob = viewModelScope.launch {
+            delay(conversationTimeoutMs)
+            // Timer completed - stop conversation mode
+            if (_micButtonState.value == MicButtonState.LISTENING) {
+                stopConversationMode()
+            }
+        }
+    }
+    
+    private fun resetConversationTimer() {
+        // Cancel current timer and start fresh
+        conversationTimerJob?.cancel()
+        // Don't restart timer immediately - let speech end trigger it
+    }
+    
+    private fun stopConversationMode() {
+        conversationTimerJob?.cancel()
+        _micButtonState.value = MicButtonState.IDLE
+        _isListening.value = false
+        _volumeLevel.value = 0f
+        speechRecognizer?.stopListening()
     }
     
     fun onMicButtonTap() {
@@ -105,31 +164,37 @@ class MainViewModel(
                 startListening()
             }
             MicButtonState.LISTENING -> {
-                _micButtonState.value = MicButtonState.IDLE
-                stopListening()
+                stopConversationMode()
             }
         }
     }
     
     private fun startListening() {
         val language = prefs.getString("transcription_language", "en-US") ?: "en-US"
-        val timeout = prefs.getInt("silence_timeout_seconds", 10) * 1000L
-        speechRecognizer?.startListening(language, timeout)
+        // Use shorter timeout for individual speech segments (30 seconds)
+        // The conversation timer handles the overall 5-minute timeout
+        val segmentTimeout = 30 * 1000L 
+        speechRecognizer?.startListening(language, segmentTimeout)
     }
     
     private fun stopListening() {
+        conversationTimerJob?.cancel()
         _isListening.value = false
         speechRecognizer?.stopListening()
     }
     
     fun clearConversation() {
         viewModelScope.launch {
+            // Stop conversation mode first
+            stopConversationMode()
+            // Clear the transcript
             repository.clearTranscript()
         }
     }
     
     override fun onCleared() {
         super.onCleared()
+        conversationTimerJob?.cancel()
         speechRecognizer?.stopListening()
     }
 }
